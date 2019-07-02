@@ -1,0 +1,154 @@
+extern "C" %{
+
+#include "parsec.h"
+#include "parsec/runtime.h"
+#include "parsec/data_internal.h"
+#include "parsec/execution_stream.h"
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
+#include "parsec/utils/debug.h"
+
+%}
+
+dcA     [ type="two_dim_block_cyclic_t*" ]
+dcInv   [ type="two_dim_block_cyclic_t*" ]
+bm      [ type="int" ]
+
+
+loadA(i)
+
+i = 0 .. bm - 1
+
+: dcA(0, i)
+
+RW     A <- dcA(0, i)
+         -> (i == 0) ? A Inv(i) : Akj PMM_D(1 .. bm - 1, i, 1)
+
+BODY
+{
+    printf("loadA %d %d\n", i, 0);
+}
+END
+
+
+Inv(k)
+
+k = 0 .. bm - 2
+
+: dcInv(k, k)
+
+READ   A <- (k == 0) ? A loadA(0) : Aij PMM_D(k, k, k)
+RW     Inv <- dcInv(k, k)
+           -> Inv PMM(k + 1 .. bm - 1, k)
+
+BODY
+{
+    printf("inv %d (inv-%d)\n", k, k);
+}
+END
+
+
+PMM(i, k)
+
+k = 0 .. bm - 2
+i = k + 1 .. bm - 1
+
+: dcA(i, k)
+
+RW     A <- (k == 0) ? dcA(i, k) : Aij PMM_D(i, k, k)
+         -> Aik PMM_D(i, k + 1 .. bm - 1, k + 1)
+READ   Inv <- Inv Inv(k)
+
+BODY
+{
+    printf("pmm i = %d, k = %d (A-%d-%d-%d)\n", i, k, i, k, k + 1);
+}
+END
+
+
+PMM_D(i, j, k)
+
+k = 1 .. bm - 1
+i = k .. bm - 1
+j = k .. bm - 1
+
+: dcA(i, j)
+
+READ   Aik <- A PMM(i, k - 1)
+READ   Akj <- (k == 1) ? A loadA(j) : Aij PMM_D(k - 1, j, k - 1)
+RW     Aij <- (k == 1) ? dcA(i, j) : Aij PMM_D(i, j, k - 1)
+           -> (i == k && j == k) ? A Inv(k)
+           -> (i == k && j > k) ? Akj PMM_D(k + 1 .. bm - 1, j, k + 1)
+           -> (i > k && j == k) ? A PMM(i, j)
+           -> (i > k && j > k) ? Aij PMM_D(i, j, k + 1)
+
+BODY
+{
+    printf("pmm_d i = %d, j = %d, k = %d (A-%d-%d-%d)\n", i, j, k, i, j, k);
+}
+END
+
+
+extern "C" %{
+
+int main(int argc, char *argv[])
+{
+    parsec_context_t* parsec;
+    parsec_taskpool_t* op;
+    two_dim_block_cyclic_t dcA, dcInv;
+    parsec_lu_taskpool_t *tp;
+    int cores = -1, world = 1, rank = 0;
+    int mb = 20;
+    int lm = 100;
+    int bm = lm / mb;
+    int rows = 1, rc;
+
+#if defined(PARSEC_HAVE_MPI)
+    {
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+
+    parsec = parsec_init(cores, &argc, &argv);
+
+    two_dim_block_cyclic_init( &dcA, matrix_RealFloat, matrix_Tile,
+                               world, rank, mb, mb, lm, lm, 0, 0, lm, lm, 1, 1, rows );
+    dcA.mat = parsec_data_allocate((size_t)dcA.super.nb_local_tiles *
+                                     (size_t)dcA.super.bsiz *
+                                     (size_t)parsec_datadist_getsizeoftype(dcA.super.mtype));
+    parsec_data_collection_set_key(&dcA.super.super, "A");
+
+    two_dim_block_cyclic_init( &dcInv, matrix_RealFloat, matrix_Tile,
+                               world, rank, mb, mb, lm, lm, 0, 0, lm, lm, 1, 1, rows );
+    dcInv.mat = parsec_data_allocate((size_t)dcInv.super.nb_local_tiles *
+                                     (size_t)dcInv.super.bsiz *
+                                     (size_t)parsec_datadist_getsizeoftype(dcInv.super.mtype));
+    parsec_data_collection_set_key(&dcInv.super.super, "Inv");
+
+
+    tp = parsec_lu_new(&dcA, &dcInv, bm);
+    parsec_matrix_add2arena( tp->arenas[PARSEC_lu_DEFAULT_ARENA], parsec_datatype_float_t,
+                             matrix_UpperLower, 1, dcA.super.mb, dcA.super.nb, dcA.super.mb,
+                             PARSEC_ARENA_ALIGNMENT_SSE, -1 );
+
+    rc = parsec_context_add_taskpool(parsec, (parsec_taskpool_t *) tp);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
+
+    rc = parsec_context_start(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    rc = parsec_context_wait(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
+
+    PARSEC_INTERNAL_TASKPOOL_DESTRUCT(tp);
+
+    parsec_fini(&parsec);
+#if defined(PARSEC_HAVE_MPI)
+    MPI_Finalize();
+#endif
+
+    return 0;
+}
+
+%}
