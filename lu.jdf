@@ -1,11 +1,86 @@
 extern "C" %{
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "parsec.h"
 #include "parsec/runtime.h"
 #include "parsec/data_internal.h"
 #include "parsec/execution_stream.h"
 #include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "parsec/utils/debug.h"
+
+
+void pmm_core(double *A, double *B, int size) {
+    int i, j, k;
+
+    double *tmp;
+    tmp = (double *)malloc(size * size * sizeof(double));
+
+    for (i = 0; i < size; i++) {
+        for (j = 0; j < size; j++) {
+            tmp[i * size + j] = 0;
+            for (k = 0; k < size; k++) {
+                tmp[i * size + j] += A[i * size + k] * B[k * size + j];
+            }
+        }
+    }
+
+    memcpy(A, tmp, size * size * sizeof(double));
+    free(tmp);
+}
+
+void pmm_d_core(double *A, double *B, double *C, int size) {
+    int i, j, k;
+    for (i = 0; i < size; i++) {
+        for (j = 0; j < size; j++) {
+            for (k = 0; k < size; k++) {
+                C[i * size + j] -= A[i * size + k] * B[k * size + j];
+            }
+        }
+    }
+}
+
+void inv_core(double *Ain, double *B, int size) {
+    int i, j, k;
+    double temp;
+    double *A;
+    A = malloc(size * size *sizeof(double));
+    memcpy(A, Ain, size * size *sizeof(double));
+
+    for (i = 0; i < size; i++) {
+        for (j = 0; j < size; j++) {
+            if (j == i)
+                B[i * size + i] = 1.000;
+            else
+                B[i * size + j] = 0.000;
+        }
+    }
+
+    for (k = 0; k < size; k++) {
+        temp = A[k * size + k];
+        for (j = 0; j < size; j++) {
+            A[k * size + j] /= temp;
+            B[k * size + j] /= temp;
+        }
+
+        for (i = 0; i < k; i++) {
+            temp = A[i * size + k];
+            for (j = 0; j < size; j++) {
+                A[i * size + j] -= temp * A[k * size + j];
+                B[i * size + j] -= temp * B[k * size + j];
+            }
+        }
+        for (i = k + 1; i < size; i++) {
+            temp = A[i * size + k];
+            for (j = 0; j < size; j++) {
+                A[i * size + j] -= temp * A[k * size + j];
+                B[i * size + j] -= temp * B[k * size + j];
+            }
+        }
+    }
+    free(A);
+}
 
 %}
 
@@ -41,6 +116,9 @@ WRITE  Inv -> Inv PMM(k + 1 .. bm - 1, k)
 BODY
 {
     printf("inv %d (inv-%d)\n", k, k);
+    double *A_ = (double *)A;
+    double *B_ = (double *)Inv;
+    inv_core(A_, B_, dcA->super.mb);
 }
 END
 
@@ -59,6 +137,11 @@ READ   Inv <- Inv Inv(k)
 BODY
 {
     printf("pmm i = %d, k = %d (A-%d-%d-%d)\n", i, k, i, k, k + 1);
+
+    double *A_ = (double *)A;
+    double *B_ = (double *)Inv;
+    pmm_core(A_, B_, dcA->super.mb);
+
 }
 END
 
@@ -82,6 +165,12 @@ RW     Aij <- (k == 1) ? dcA(i, j) : Aij PMM_D(i, j, k - 1)
 BODY
 {
     printf("pmm_d i = %d, j = %d, k = %d (A-%d-%d-%d)\n", i, j, k, i, j, k);
+
+    double *A_ = (double *)Aik;
+    double *B_ = (double *)Akj;
+    double *C_ = (double *)Aij;
+    pmm_d_core(A_, B_, C_, dcA->super.mb);
+
 }
 END
 
