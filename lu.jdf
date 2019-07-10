@@ -222,14 +222,18 @@ extern "C" %{
 
 int main(int argc, char *argv[])
 {
+    if(argc != 3) {
+        printf("Wrong number of arguments :\n");
+        printf("%s matrix_size number_of_tiles\n", argv[0]);
+    }
     parsec_context_t* parsec;
     parsec_taskpool_t* op;
     two_dim_block_cyclic_t dcA;
     parsec_lu_taskpool_t *tp;
     int cores = -1, world = 1, rank = 0;
-    int mb = 20;
-    int lm = 100;
-    int bm = lm / mb;
+    int mb = atoi(argv[2]); //tile size
+    int lm = atoi(argv[1]); //global matrix size
+    int bm = lm / mb; // number of tiles
     int rows = 1, rc;
 
 #if defined(PARSEC_HAVE_MPI)
