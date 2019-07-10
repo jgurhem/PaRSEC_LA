@@ -10,6 +10,13 @@ extern "C" %{
 #include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
 #include "parsec/utils/debug.h"
 
+void print_tile(two_dim_block_cyclic_t *dcA, int it, int jt, void *A, char *id) {
+    for(int il = 0; il < dcA->super.mb; il++) {
+        for(int jl = 0; jl < dcA->super.mb; jl++) {
+            printf("%s %d %d %lf\n", id, it * dcA->super.mb + il, jt * dcA->super.mb + jl, *(((double *)A)+il*dcA->super.mb+jl));
+        }
+    }
+}
 
 void pmm_core(double *A, double *B, int size) {
     int i, j, k;
@@ -99,7 +106,13 @@ RW     A <- dcA(0, i)
 
 BODY
 {
+#ifdef DEBUG_PRINT_TASK
     printf("loadA %d %d\n", i, 0);
+#endif
+#ifdef DEBUG_OUTPUT_COO
+    print_tile(dcA, 0, i, A, "a");
+    print_tile(dcA, 0, i, A, "lu");
+#endif
 }
 END
 
@@ -115,7 +128,15 @@ WRITE  Inv -> Inv PMM(k + 1 .. bm - 1, k)
 
 BODY
 {
+#ifdef DEBUG_PRINT_TASK
     printf("inv %d (inv-%d)\n", k, k);
+#endif
+#ifdef DEBUG_OUTPUT_COO
+    if(k == 0) {
+        print_tile(dcA, k, k, A, "a");
+        print_tile(dcA, k, k, A, "lu");
+    }
+#endif
     double *A_ = (double *)A;
     double *B_ = (double *)Inv;
     inv_core(A_, B_, dcA->super.mb);
@@ -136,12 +157,22 @@ READ   Inv <- Inv Inv(k)
 
 BODY
 {
+#ifdef DEBUG_PRINT_TASK
     printf("pmm i = %d, k = %d (A-%d-%d-%d)\n", i, k, i, k, k + 1);
+#endif
+#ifdef DEBUG_OUTPUT_COO
+    if(k == 0) {
+        print_tile(dcA, i, k, A, "a");
+    }
+#endif
 
     double *A_ = (double *)A;
     double *B_ = (double *)Inv;
     pmm_core(A_, B_, dcA->super.mb);
 
+#ifdef DEBUG_OUTPUT_COO
+    print_tile(dcA, i, k, A, "lu");
+#endif
 }
 END
 
@@ -164,13 +195,25 @@ RW     Aij <- (k == 1) ? dcA(i, j) : Aij PMM_D(i, j, k - 1)
 
 BODY
 {
+#ifdef DEBUG_PRINT_TASK
     printf("pmm_d i = %d, j = %d, k = %d (A-%d-%d-%d)\n", i, j, k, i, j, k);
+#endif
+#ifdef DEBUG_OUTPUT_COO
+    if(k == 1) {
+        print_tile(dcA, i, j, Aij, "a");
+    }
+#endif
 
     double *A_ = (double *)Aik;
     double *B_ = (double *)Akj;
     double *C_ = (double *)Aij;
     pmm_d_core(A_, B_, C_, dcA->super.mb);
 
+#ifdef DEBUG_OUTPUT_COO
+    if(i == k && j >= k) {
+        print_tile(dcA, i, j, Aij, "lu");
+    }
+#endif
 }
 END
 
