@@ -153,6 +153,7 @@ i = k + 1 .. bm - 1
 
 RW     A <- (k == 0) ? dcA(i, k) : Aij PMM_D(i, k, k)
          -> Aik PMM_D(i, k + 1 .. bm - 1, k + 1)
+         -> dcA(i, k)
 READ   Inv <- Inv Inv(k)
 
 BODY
@@ -192,6 +193,7 @@ RW     Aij <- (k == 1) ? dcA(i, j) : Aij PMM_D(i, j, k - 1)
            -> (i == k && j > k) ? Akj PMM_D(k + 1 .. bm - 1, j, k + 1)
            -> (i > k && j == k) ? A PMM(i, j)
            -> (i > k && j > k) ? Aij PMM_D(i, j, k + 1)
+           -> (i == k && j >= k) ? dcA(i, j)
 
 BODY
 {
