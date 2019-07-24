@@ -136,10 +136,19 @@ BODY
         print_tile(dcA, k, k, A, "a");
         print_tile(dcA, k, k, A, "lu");
     }
+    char id[20];
+    sprintf(id, "%s%d%s", "inv_k", k, "_a");
+    print_tile(dcA, 0, 0, A, id);
 #endif
     double *A_ = (double *)A;
     double *B_ = (double *)Inv;
+
     inv_core(A_, B_, dcA->super.mb);
+
+#ifdef DEBUG_OUTPUT_COO
+    sprintf(id, "%s%d%s", "inv_k", k, "_out");
+    print_tile(dcA, 0, 0, Inv, id);
+#endif
 }
 END
 
@@ -165,13 +174,21 @@ BODY
     if(k == 0) {
         print_tile(dcA, i, k, A, "a");
     }
+    char id[20];
+    sprintf(id, "%si%dk%d%s", "pmm_", i, k, "_a");
+    print_tile(dcA, 0, 0, A, id);
+    sprintf(id, "%si%dk%d%s", "pmm_", i, k, "_inv");
+    print_tile(dcA, 0, 0, Inv, id);
 #endif
 
     double *A_ = (double *)A;
     double *B_ = (double *)Inv;
+
     pmm_core(A_, B_, dcA->super.mb);
 
 #ifdef DEBUG_OUTPUT_COO
+    sprintf(id, "%si%dk%d%s", "pmm_", i, k, "_out");
+    print_tile(dcA, 0, 0, A, id);
     print_tile(dcA, i, k, A, "lu");
 #endif
 }
@@ -204,14 +221,24 @@ BODY
     if(k == 1) {
         print_tile(dcA, i, j, Aij, "a");
     }
+    char id[20];
+    sprintf(id, "%si%dj%dk%d%s", "pmmd_", i, j, k, "_aij");
+    print_tile(dcA, 0, 0, Aij, id);
+    sprintf(id, "%si%dj%dk%d%s", "pmmd_", i, j, k, "_aik");
+    print_tile(dcA, 0, 0, Aik, id);
+    sprintf(id, "%si%dj%dk%d%s", "pmmd_", i, j, k, "_akj");
+    print_tile(dcA, 0, 0, Akj, id);
 #endif
 
     double *A_ = (double *)Aik;
     double *B_ = (double *)Akj;
     double *C_ = (double *)Aij;
+
     pmm_d_core(A_, B_, C_, dcA->super.mb);
 
 #ifdef DEBUG_OUTPUT_COO
+    sprintf(id, "%si%dj%dk%d%s", "pmmd_", i, j, k, "_out");
+    print_tile(dcA, 0, 0, Aij, id);
     if(i == k && j >= k) {
         print_tile(dcA, i, j, Aij, "lu");
     }
