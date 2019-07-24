@@ -292,7 +292,7 @@ int main(int argc, char *argv[])
     parsec_data_collection_set_key(&dcA.super.super, "A");
 
     tp = parsec_lu_new(&dcA, bm);
-    parsec_matrix_add2arena( tp->arenas[PARSEC_lu_DEFAULT_ARENA], parsec_datatype_float_t,
+    parsec_matrix_add2arena( tp->arenas[PARSEC_lu_DEFAULT_ARENA], parsec_datatype_double_t,
                              matrix_UpperLower, 1, dcA.super.mb, dcA.super.nb, dcA.super.mb,
                              PARSEC_ARENA_ALIGNMENT_SSE, -1 );
 
