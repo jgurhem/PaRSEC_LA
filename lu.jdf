@@ -2,6 +2,7 @@ extern "C" %{
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "parsec.h"
 #include "parsec/runtime.h"
@@ -289,6 +290,12 @@ int main(int argc, char *argv[])
          matp[i] = (double)((rand() % 2000) - 1000) / 100;
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    struct timeval ts, te;
+    if (rank == 0) {
+        gettimeofday(&ts, 0);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
     parsec_data_collection_set_key(&dcA.super.super, "A");
 
     tp = parsec_lu_new(&dcA, bm);
@@ -303,8 +310,13 @@ int main(int argc, char *argv[])
     PARSEC_CHECK_ERROR(rc, "parsec_context_start");
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
-
     PARSEC_INTERNAL_TASKPOOL_DESTRUCT(tp);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+        gettimeofday(&te, 0);
+        printf("%f\n", (te.tv_sec - ts.tv_sec) + (te.tv_usec - ts.tv_usec) / 1000000.0);
+    }
 
     parsec_fini(&parsec);
 #if defined(PARSEC_HAVE_MPI)
